@@ -15,3 +15,11 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         node ${{ github.action_path }}/scripts/culinary_review.js
+        const path = require('path');
+        const scriptPath = path.join(process.env.ACTION_PATH, 'scripts/culinary_review.js');
+
+        console.log(`[System] Executing script: ${scriptPath}`);
+
+        const culinaryReview = require(scriptPath);
+
+        await culinaryReview({ github, context });
