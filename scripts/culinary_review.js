@@ -88,11 +88,11 @@ module.exports = async ({ github, context }) => {
   }
 
   // [3] 리뷰 수집 함수
-  async function collectReviewComments(judgeName, rawData) {
+  function collectComments(judgeName, rawData, validLines) {
     try {
       const cleanedData = rawData.replace(/```json|```/g, '').trim();
-      let parsed = JSON.parse(cleanedData);
-      let reviews = Array.isArray(parsed) ? parsed : (parsed.reviews || []);
+      const parsed = JSON.parse(cleanedData);
+      const reviews = Array.isArray(parsed) ? parsed : (parsed.reviews || []);
 
       return reviews
         .filter(r => r.comment && validLines.has(parseInt(r.line)))
@@ -103,23 +103,46 @@ module.exports = async ({ github, context }) => {
           body: `**${judgeName}**: ${r.comment}`
         }));
     } catch (e) {
-      console.error(`${judgeName} 파싱 에러:`, e.message);
+      console.error(`${judgeName} 파싱 실패:`, e.message);
       return [];
     }
+  }
+
+    // [수정] @@ -L,n +L,n @@ 범위 내의 모든 라인을 허용하는 로직
+  function getValidDiffLines(diffText) {
+    const lines = new Set();
+    const hunks = diffText.split(/^@@/m).slice(1);
+
+    hunks.forEach(hunk => {
+      const header = hunk.split('\n')[0];
+      // +67,18 같은 패턴에서 시작번호(67)와 길이(18)를 추출
+      const match = header.match(/\+(\d+)(?:,(\d+))?/);
+      if (!match) return;
+
+      const startLine = parseInt(match[1]);
+      const lineCount = match[2] ? parseInt(match[2]) : 1;
+
+      // 해당 Hunk(덩어리) 범위 내의 모든 라인 번호를 허용 리스트에 추가
+      for (let i = 0; i < lineCount; i++) {
+        lines.add(startLine + i);
+      }
+    });
+    return lines;
   }
 
   // [4] 프로세스 실행
   try {
     const loadPrompt = (f) => fs.readFileSync(path.join(scriptsPath, f), 'utf8');
 
+    const validLines = getValidDiffLines(diff); // 위에서 수정한 함수 사용
+
     const paikRaw = await askGemini(loadPrompt('prompt_paik.md'), diff, fileContentWithLineNumbers, prBody);
-    const paikComments = await collectReviewComments("백종원", paikRaw);
-    // await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 심사");
-
     const ahnRaw = await askGemini(loadPrompt('prompt_ahn.md'), diff, fileContentWithLineNumbers, prBody);
-    const ahnComments = await collectReviewComments("안성재", ahnRaw);
 
-    const allComments = [...paikComments, ...ahnComments];
+    const allComments = [
+      ...collectComments("백종원", paikRaw, validLines),
+      ...collectComments("안성재", ahnRaw, validLines)
+    ];
 
     // 단 한 번의 API 호출로 모든 심사평 게시
     if (allComments.length > 0) {
@@ -128,7 +151,7 @@ module.exports = async ({ github, context }) => {
         repo: repoName,
         pull_number: prNumber,
         commit_id: headSha,
-        body: "### 👨‍🍳👓 흑백요리사 합동 심사 결과",
+        body: "### 👨‍🍳👓 흑백요리사 합동 심사",
         event: 'COMMENT',
         comments: allComments
       });
