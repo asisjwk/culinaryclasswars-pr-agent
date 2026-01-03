@@ -16,7 +16,7 @@ module.exports = async ({ github, context }) => {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\n\n심사 대상 코드:\n${content}` }] }] })
+      body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\n\n[도전자의 코드 설명서(PR 본문)]:\n${description}\n\n[심사 대상 코드(Diff)]:\n${content}` }] }] })
     });
     const data = await res.json();
     return data.candidates[0].content.parts[0].text;
