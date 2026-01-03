@@ -128,21 +128,40 @@ module.exports = async ({ github, context }) => {
     const loadPrompt = (f) => fs.readFileSync(path.join(scriptsPath, f), 'utf8');
 
     const paikRaw = await askGemini(loadPrompt('prompt_paik.md'), diff, fileContentWithLineNumbers, prBody);
-    await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 실시간 미감 체크");
+    await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 심사");
 
     const ahnRaw = await askGemini(loadPrompt('prompt_ahn.md'), diff, fileContentWithLineNumbers, prBody);
-    await createSafeReview("안성재", ahnRaw, "### 👓 안성재의 익힘 심사");
+    await createSafeReview("안성재", ahnRaw, "### 👓 안성재의 심사");
 
-    // 끝장 토론은 댓글로
-    const debateRaw = await askGemini(loadPrompt('prompt_debate.md'), "", `[Paik]: ${paikRaw}\n[Ahn]: ${ahnRaw}`, prBody);
-    let finalDebate = debateRaw;
-    try { finalDebate = JSON.parse(debateRaw.replace(/```json|```/g, '')).debate; } catch(e) {}
+    const debateRaw = await askGemini(
+      loadPrompt('prompt_debate.md'),
+      "",
+      `[Paik's Review]: ${paikRaw}\n\n[Ahn's Review]: ${ahnRaw}`,
+      prBody
+    );
 
+    let finalDebateText = "";
+    try {
+      // 1. JSON 태그 제거 및 파싱
+      const cleaned = debateRaw.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      // 2. 'debate' 필드가 있으면 가져오고, 아니면 객체 전체를 예쁘게 문자열로 변환
+      finalDebateText = parsed.debate || parsed.comment || JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      // 3. JSON 파싱 실패 시 원문에서 마크다운 태그만 정리해서 사용
+      finalDebateText = debateRaw.replace(/```json|```/g, '').trim();
+    }
+
+    // [중요] createSafeReview 대신 createComment를 사용하여 대화 형식으로 출력
     await github.rest.issues.createComment({
-      owner: repoOwner, repo: repoName, issue_number: prNumber,
-      body: `## 🤝 심사위원 심사 결과\n\n${finalDebate}`
+      owner: repoOwner,
+      repo: repoName,
+      issue_number: prNumber,
+      body: `## 🤝 심사 결과\n\n${finalDebateText}`
     });
-  } catch (error) {
-    console.error("Review Error:", error);
+    console.log("[System] Final debate posted.");
+  } catch (e) {
+    console.log('prompt error: ', e)
   }
-};
+}
