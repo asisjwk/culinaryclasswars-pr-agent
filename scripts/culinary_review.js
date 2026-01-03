@@ -3,7 +3,8 @@ const path = require('path');
 
 module.exports = async ({ github, context }) => {
   const { execSync } = require('child_process');
-  const scriptsPath = path.join(process.cwd(), 'scripts');
+  const actionRoot = process.env.ACTION_PATH || process.cwd();
+  const scriptsPath = path.join(actionRoot, 'scripts');
 
   const pr = context.payload.pull_request;
   const baseRef = pr.base.ref;

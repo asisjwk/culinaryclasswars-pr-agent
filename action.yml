@@ -12,5 +12,6 @@ runs:
       shell: bash
       env:
         GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         node ${{ github.action_path }}/scripts/culinary_review.js
