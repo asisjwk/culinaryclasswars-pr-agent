@@ -67,7 +67,11 @@ module.exports = async ({ github, context }) => {
           parts: [{
             text: `
               ${prompt}
-              [TASK] 전체 소스 코드의 라인 번호를 기준으로 리뷰하십시오.
+              [CRITICAL RULE]
+              1. ONLY use line numbers that exist in the provided [Full Code].
+              2. The "line" value must be a strictly positive INTEGER.
+              3. If you cannot find a specific line to comment on, return an empty array: {"reviews": []}.
+              4. DO NOT use null, "N/A", or strings for the line number.
 
               [전체 소스 코드]:
               ${fullCode}
@@ -111,19 +115,21 @@ module.exports = async ({ github, context }) => {
       }
 
       // 3. 필터링 및 댓글 본문 생성 (undefined 방지)
-      const validComments = reviews
-        .filter(r => r && r.line) // 최소한 line 정보는 있어야 함
-        .map(r => {
+        const validComments = reviews
+        .filter(r => {
+          // 라인 번호가 반드시 '숫자'여야 하며, 0보다 커야 함
+          const lineNum = parseInt(r.line);
+          return r && !isNaN(lineNum) && lineNum > 0 && r.comment;
+        })
+        .map(r => ({
+          path: targetFile,
+          line: parseInt(r.line),
           // r.comment가 없으면 r.message나 객체 전체 문자열이라도 가져옴
-          const commentText = r.comment || r.message || JSON.stringify(r);
-          return {
-            path: targetFile,
-            line: parseInt(r.line),
-            body: `**${judgeName}**: ${commentText}`
-          };
-        });
+          body: `**${judgeName}**: ${r.comment || r.message || JSON.stringify(r)}`
+        }));
 
       if (validComments.length > 0) {
+        console.log(`[System] Posting ${validComments.length} comments from ${judgeName}`);
         await github.rest.pulls.createReview({
           owner: repoOwner,
           repo: repoName,
