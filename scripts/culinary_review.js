@@ -162,14 +162,7 @@ module.exports = async ({ github, context }) => {
       `[Paik's Review]: ${paikRaw}\n\n[Ahn's Review]: ${ahnRaw}`,
       prBody
     );
-
-    await github.rest.issues.createComment({
-      owner: repoOwner,
-      repo: repoName,
-      issue_number: prNumber,
-      body: `## 🤝 심사위원 끝장 토론 결과\n\n${debateResult}`
-    });
-
+    await createSafeReview("심사 결과", debateResult, "### 심사 결과");
   } catch (error) {
     console.error("Evaluation Process Error:", error);
   }
