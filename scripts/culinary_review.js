@@ -149,6 +149,28 @@ module.exports = async ({ github, context }) => {
 
       const parsed = JSON.parse(jsonString);
 
+      if (Array.isArray(parsed)) {
+        // [핵심] JSON 배열을 마크다운 대화 형식으로 변환
+        finalDebateText = parsed.map(item => {
+          let emoji = "💬";
+          let speaker = item.speaker;
+
+          if (speaker.includes("Baek") || speaker.includes("백종원")) {
+            emoji = "👨‍🍳 **백종원**";
+          } else if (speaker.includes("Ahn") || speaker.includes("안성재")) {
+            emoji = "👓 **안성재**";
+          } else if (speaker.includes("Mediator") || speaker.includes("중재자")) {
+            emoji = "🎤 **중재자**";
+          }
+
+          const lineInfo = item.line_number_referenced ? ` (L${item.line_number_referenced})` : "";
+
+          return `> ${emoji}: ${item.statement}${lineInfo}`;
+        }).join('\n\n');
+      } else {
+        finalDebateText = parsed.debate || JSON.stringify(parsed, null, 2);
+      }
+
       // 2. 여러가지 필드명 대응 (debate, comment, result 등)
       finalDebateText = parsed.debate || parsed.comment || parsed.result || (typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2));
 
