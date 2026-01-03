@@ -72,9 +72,24 @@ module.exports = async ({ github, context }) => {
 
   async function createSafeReview(judgeName, rawData, title) {
     try {
-      const reviews = JSON.parse(rawData.replace(/```json|```/g, ''));
+      // 1. JSON 추출 및 파싱
+      const cleanedData = rawData.replace(/```json|```/g, '').trim();
+      let parsed = JSON.parse(cleanedData);
+
+      // 2. 데이터 정규화 (배열이든 객체 내 배열이든 처리 가능하게)
+      let reviews = [];
+      if (Array.isArray(parsed)) {
+        reviews = parsed;
+      } else if (parsed.reviews && Array.isArray(parsed.reviews)) {
+        reviews = parsed.reviews;
+      } else {
+        console.error(`${judgeName} 응답 형식이 유효하지 않음:`, parsed);
+        return;
+      }
+
+      // 3. 필터링 및 댓글 생성
       const validComments = reviews
-        .filter(r => r.line && r.line > 0)
+        .filter(r => r && typeof r === 'object' && r.line && !isNaN(r.line))
         .map(r => ({
           path: targetFile,
           line: parseInt(r.line),
@@ -85,7 +100,7 @@ module.exports = async ({ github, context }) => {
         await github.rest.pulls.createReview({
           owner: context.repo.owner,
           repo: context.repo.repo,
-          pull_number: pr.number, // 정의된 pr 변수 사용
+          pull_number: pr.number,
           commit_id: headSha,
           body: title,
           event: 'COMMENT',
@@ -93,7 +108,7 @@ module.exports = async ({ github, context }) => {
         });
       }
     } catch (e) {
-      console.error(`${judgeName} 리뷰 생성 실패:`, e.message);
+      console.error(`${judgeName} 데이터 처리 중 예상치 못한 에러:`, e.message);
     }
   }
 
