@@ -14,7 +14,7 @@ runs:
     - name: Install Reviewer Dependencies
       shell: bash
       run: |
-        run: npm install @actions/github --prefix ${{ github.action_path }}/scripts
+        npm install @actions/github --prefix ${{ github.action_path }}/scripts
 
     - name: Run Culinary Review
       shell: bash
