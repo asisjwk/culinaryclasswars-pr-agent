@@ -1,19 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-/**
- * Culinary Class Wars PR Review Engine
- * github-script 환경에서 호출됨
- */
 module.exports = async ({ github, context }) => {
   const { execSync } = require('child_process');
 
-  // [1] 데이터 추출
   const pr = context.payload.pull_request;
-  if (!pr) {
-    console.log("[System] Not a Pull Request event. Skipping.");
-    return;
-  }
+  if (!pr) return;
 
   const repoOwner = context.repo.owner;
   const repoName = context.repo.repo;
@@ -21,42 +13,50 @@ module.exports = async ({ github, context }) => {
   const headSha = pr.head.sha;
   const baseRef = pr.base.ref;
   const prBody = pr.body || "No description provided.";
-
-  // ACTION_PATH는 action.yml의 env에서 주입됩니다.
   const actionRoot = process.env.ACTION_PATH;
   const scriptsPath = path.join(actionRoot, 'scripts');
 
-  console.log(`[System] Starting review for PR #${prNumber} in ${repoOwner}/${repoName}`);
-
-  // [2] 변경 사항 파악
-  let changedFiles;
-  try {
-    changedFiles = execSync(`git diff --name-only origin/${baseRef} HEAD`).toString().trim().split('\n');
-  } catch (e) {
-    console.error("[Error] Failed to get git diff. Ensure fetch-depth is 0 in checkout step.");
-    return;
-  }
-
+  // [1] 변경된 파일 찾기 및 Diff 분석
+  let changedFiles = execSync(`git diff --name-only origin/${baseRef} HEAD`).toString().trim().split('\n');
   const targetFile = changedFiles[0];
-  if (!targetFile) {
-    console.log("No changed files to review.");
-    return;
+  if (!targetFile) return;
+
+  const diff = execSync(`git diff origin/${baseRef} HEAD ${targetFile}`).toString();
+
+  // [핵심] 실제 수정된 라인 번호들(Hunks)만 추출하는 함수
+  function getValidDiffLines(diffText) {
+    const lines = new Set();
+    const hunks = diffText.split(/^@@/m).slice(1);
+
+    hunks.forEach(hunk => {
+      const header = hunk.split('\n')[0];
+      const match = header.match(/\+(\d+),?(\d+)?/); // 새 파일의 시작 라인과 길이
+      if (!match) return;
+
+      let currentLine = parseInt(match[1]);
+      const contentLines = hunk.split('\n').slice(1);
+
+      contentLines.forEach(line => {
+        if (line.startsWith('+')) {
+          lines.add(currentLine);
+          currentLine++;
+        } else if (!line.startsWith('-')) {
+          currentLine++;
+        }
+      });
+    });
+    return lines;
   }
 
-  // 파일의 전체 내용 및 라인 번호 포함 텍스트 생성
+  const validLines = getValidDiffLines(diff);
   const fileContent = fs.readFileSync(path.join(process.cwd(), targetFile), 'utf8');
   const fileContentWithLineNumbers = fileContent.split('\n')
     .map((line, index) => `${index + 1}: ${line}`)
     .join('\n');
 
-  const diff = execSync(`git diff origin/${baseRef} HEAD ${targetFile}`).toString();
-  if (!diff) return;
-
-  const loadPrompt = (file) => fs.readFileSync(path.join(scriptsPath, file), 'utf8');
-
-  // [3] Gemini API 호출 함수
+  // [2] Gemini API 호출 함수
   async function askGemini(prompt, diffContent, fullCode, description) {
-    const model = "gemini-2.5-flash";
+    const model = "gemini-1.5-flash"; // 2.5는 지원 확인 필요하므로 1.5-flash 권장
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const response = await fetch(url, {
@@ -65,22 +65,17 @@ module.exports = async ({ github, context }) => {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `
-              ${prompt}
-              [CRITICAL RULE]
-              1. ONLY comment on the lines that appear in the [Modified Diff] section.
-              2. If the issue is not related to the modified lines, ignore it.
-              3. Your "line" number MUST be the line number from the [Full Source Code].
+            text: `${prompt}
+              [RULES]
+              - ONLY comment on lines that exist in the [Valid Line Numbers].
+              - [Valid Line Numbers]: ${Array.from(validLines).join(', ')}
+              - If no valid lines deserve comment, return {"reviews": []}.
 
-              [전체 소스 코드]:
+              [Full Source]:
               ${fullCode}
 
-              [수정된 Diff]:
-              ${diffContent}
-
-              [PR 설명]:
-              ${description}
-            `
+              [Diff]:
+              ${diffContent}`
           }]
         }],
         generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
@@ -92,48 +87,27 @@ module.exports = async ({ github, context }) => {
     return data.candidates[0].content.parts[0].text;
   }
 
-  // [4] GitHub 리뷰 생성 함수
+  // [3] 리뷰 생성 함수
   async function createSafeReview(judgeName, rawData, title) {
     try {
-      // 1. JSON 추출 및 파싱
       const cleanedData = rawData.replace(/```json|```/g, '').trim();
-      let parsed;
-      try {
-        parsed = JSON.parse(cleanedData);
-      } catch (e) {
-        console.error(`${judgeName} JSON 파싱 실패:`, cleanedData);
-        return;
-      }
+      let parsed = JSON.parse(cleanedData);
+      let reviews = Array.isArray(parsed) ? parsed : (parsed.reviews || []);
 
-      // 2. 데이터 정규화 (배열/객체 혼용 대응)
-      let reviews = [];
-      if (Array.isArray(parsed)) {
-        reviews = parsed;
-      } else if (parsed.reviews && Array.isArray(parsed.reviews)) {
-        reviews = parsed.reviews;
-      }
-
-      // 3. 필터링 및 댓글 본문 생성 (undefined 방지)
       const validComments = reviews
         .filter(r => {
           const lineNum = parseInt(r.line);
-          // 1. 숫자인지 확인
-          if (isNaN(lineNum) || lineNum <= 0) return false;
-
-          // 2. [추가] 해당 라인이 Diff 내용에 포함되어 있는지 확인 (Halliucination 방지)
-          // Diff 텍스트 안에 "@@ -L,n +lineNum,n @@" 형태가 있는지 확인하거나
-          // 최소한 해당 라인 번호가 코드에 존재하는지 확인합니다.
-          return r.comment && fileContent.split('\n').length >= lineNum;
+          // 실제 수정된 범위(validLines) 안에 있는 번호만 통과
+          return r.comment && validLines.has(lineNum);
         })
         .map(r => ({
           path: targetFile,
           line: parseInt(r.line),
-          side: "RIGHT", // [추가] 새롭게 추가된 코드 쪽에 댓글을 단다는 설정
-          body: `**${judgeName}**: ${r.comment || r.message || JSON.stringify(r)}`
+          side: "RIGHT",
+          body: `**${judgeName}**: ${r.comment}`
         }));
 
       if (validComments.length > 0) {
-        console.log(`[System] Posting ${validComments.length} comments from ${judgeName}`);
         await github.rest.pulls.createReview({
           owner: repoOwner,
           repo: repoName,
@@ -143,37 +117,32 @@ module.exports = async ({ github, context }) => {
           event: 'COMMENT',
           comments: validComments
         });
-        console.log(`[System] ${judgeName}'s review posted.`);
-      } else {
-        console.log(`[System] No valid comments from ${judgeName}. Raw response: ${rawData}`);
       }
     } catch (e) {
-      console.error(`${judgeName} 데이터 처리 중 에러:`, e.message);
+      console.error(`${judgeName} 처리 에러:`, e.message);
     }
   }
 
-  // [5] 메인 심사 프로세스 실행
+  // [4] 프로세스 실행
   try {
-    // 백종원 심사
-    console.log("Step 1: Paik's Intuition...");
+    const loadPrompt = (f) => fs.readFileSync(path.join(scriptsPath, f), 'utf8');
+
     const paikRaw = await askGemini(loadPrompt('prompt_paik.md'), diff, fileContentWithLineNumbers, prBody);
-    await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 실시간 코드 미감 체크");
+    await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 실시간 미감 체크");
 
-    // 안성재 심사
-    console.log("Step 2: Ahn's Perfection...");
     const ahnRaw = await askGemini(loadPrompt('prompt_ahn.md'), diff, fileContentWithLineNumbers, prBody);
-    await createSafeReview("안성재", ahnRaw, "### 👓 안성재의 로직 익힘 심사");
+    await createSafeReview("안성재", ahnRaw, "### 👓 안성재의 익힘 심사");
 
-    // 끝장 토론 (PR 본문에 댓글 작성)
-    console.log("Step 3: Final Debate...");
-    const debateResult = await askGemini(
-      loadPrompt('prompt_debate.md'),
-      "",
-      `[Paik's Review]: ${paikRaw}\n\n[Ahn's Review]: ${ahnRaw}`,
-      prBody
-    );
-    await createSafeReview("심사 결과", debateResult, "### 심사 결과");
+    // 끝장 토론은 댓글로
+    const debateRaw = await askGemini(loadPrompt('prompt_debate.md'), "", `[Paik]: ${paikRaw}\n[Ahn]: ${ahnRaw}`, prBody);
+    let finalDebate = debateRaw;
+    try { finalDebate = JSON.parse(debateRaw.replace(/```json|```/g, '')).debate; } catch(e) {}
+
+    await github.rest.issues.createComment({
+      owner: repoOwner, repo: repoName, issue_number: prNumber,
+      body: `## 🤝 심사위원 심사 결과\n\n${finalDebate}`
+    });
   } catch (error) {
-    console.error("Evaluation Process Error:", error);
+    console.error("Review Error:", error);
   }
 };
