@@ -1,0 +1,5 @@
+name: "Sample"
+
+on:
+  pull_request:
+    types: [opened, synchronize]
