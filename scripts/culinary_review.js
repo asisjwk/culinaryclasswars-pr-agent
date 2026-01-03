@@ -87,39 +87,24 @@ module.exports = async ({ github, context }) => {
     return data.candidates[0].content.parts[0].text;
   }
 
-  // [3] 리뷰 생성 함수
-  async function createSafeReview(judgeName, rawData, title) {
+  // [3] 리뷰 수집 함수
+  async function collectReviewComments(judgeName, rawData) {
     try {
       const cleanedData = rawData.replace(/```json|```/g, '').trim();
       let parsed = JSON.parse(cleanedData);
       let reviews = Array.isArray(parsed) ? parsed : (parsed.reviews || []);
 
-      const validComments = reviews
-        .filter(r => {
-          const lineNum = parseInt(r.line);
-          // 실제 수정된 범위(validLines) 안에 있는 번호만 통과
-          return r.comment && validLines.has(lineNum);
-        })
+      return reviews
+        .filter(r => r.comment && validLines.has(parseInt(r.line)))
         .map(r => ({
           path: targetFile,
           line: parseInt(r.line),
           side: "RIGHT",
           body: `**${judgeName}**: ${r.comment}`
         }));
-
-      if (validComments.length > 0) {
-        await github.rest.pulls.createReview({
-          owner: repoOwner,
-          repo: repoName,
-          pull_number: prNumber,
-          commit_id: headSha,
-          body: title,
-          event: 'COMMENT',
-          comments: validComments
-        });
-      }
     } catch (e) {
-      console.error(`${judgeName} 처리 에러:`, e.message);
+      console.error(`${judgeName} 파싱 에러:`, e.message);
+      return [];
     }
   }
 
@@ -128,10 +113,27 @@ module.exports = async ({ github, context }) => {
     const loadPrompt = (f) => fs.readFileSync(path.join(scriptsPath, f), 'utf8');
 
     const paikRaw = await askGemini(loadPrompt('prompt_paik.md'), diff, fileContentWithLineNumbers, prBody);
-    await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 심사");
+    const paikComments = await collectReviewComments("백종원", paikRaw);
+    // await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 심사");
 
     const ahnRaw = await askGemini(loadPrompt('prompt_ahn.md'), diff, fileContentWithLineNumbers, prBody);
-    await createSafeReview("안성재", ahnRaw, "### 👓 안성재의 심사");
+    const ahnComments = await collectReviewComments("안성재", ahnRaw);
+
+    const allComments = [...paikComments, ...ahnComments];
+
+    // 단 한 번의 API 호출로 모든 심사평 게시
+    if (allComments.length > 0) {
+      await github.rest.pulls.createReview({
+        owner: repoOwner,
+        repo: repoName,
+        pull_number: prNumber,
+        commit_id: headSha,
+        body: "### 👨‍🍳👓 흑백요리사 합동 심사 결과",
+        event: 'COMMENT',
+        comments: allComments
+      });
+      console.log(`[System] Posted ${allComments.length} comments from both judges.`);
+    }
   } catch (e) {
     console.log('prompt error: ', e)
   }
