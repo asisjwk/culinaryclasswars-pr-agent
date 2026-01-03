@@ -92,17 +92,36 @@ module.exports = async ({ github, context }) => {
   // [4] GitHub 리뷰 생성 함수
   async function createSafeReview(judgeName, rawData, title) {
     try {
+      // 1. JSON 추출 및 파싱
       const cleanedData = rawData.replace(/```json|```/g, '').trim();
-      let parsed = JSON.parse(cleanedData);
-      let reviews = Array.isArray(parsed) ? parsed : (parsed.reviews || []);
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanedData);
+      } catch (e) {
+        console.error(`${judgeName} JSON 파싱 실패:`, cleanedData);
+        return;
+      }
 
+      // 2. 데이터 정규화 (배열/객체 혼용 대응)
+      let reviews = [];
+      if (Array.isArray(parsed)) {
+        reviews = parsed;
+      } else if (parsed.reviews && Array.isArray(parsed.reviews)) {
+        reviews = parsed.reviews;
+      }
+
+      // 3. 필터링 및 댓글 본문 생성 (undefined 방지)
       const validComments = reviews
-        .filter(r => r && r.line && !isNaN(r.line))
-        .map(r => ({
-          path: targetFile,
-          line: parseInt(r.line),
-          body: `**${judgeName}**: ${r.comment}`
-        }));
+        .filter(r => r && r.line) // 최소한 line 정보는 있어야 함
+        .map(r => {
+          // r.comment가 없으면 r.message나 객체 전체 문자열이라도 가져옴
+          const commentText = r.comment || r.message || JSON.stringify(r);
+          return {
+            path: targetFile,
+            line: parseInt(r.line),
+            body: `**${judgeName}**: ${commentText}`
+          };
+        });
 
       if (validComments.length > 0) {
         await github.rest.pulls.createReview({
@@ -114,9 +133,12 @@ module.exports = async ({ github, context }) => {
           event: 'COMMENT',
           comments: validComments
         });
+        console.log(`[System] ${judgeName}'s review posted.`);
+      } else {
+        console.log(`[System] No valid comments from ${judgeName}. Raw response: ${rawData}`);
       }
     } catch (e) {
-      console.error(`${judgeName} 데이터 처리 에러:`, e.message);
+      console.error(`${judgeName} 데이터 처리 중 에러:`, e.message);
     }
   }
 
