@@ -1,0 +1,28 @@
+name: "Culinary Class Wars: AI Code Review"
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  culinary-review:
+    name: AI Judges Review
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Execute Culinary AI Review Script
+        uses: actions/github-script@v7
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        with:
+          script: |
+            const script = require('./.github/scripts/culinary_review.js');
+            await script({ github, context });
