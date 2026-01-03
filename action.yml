@@ -1,6 +1,10 @@
 # action.yml
 name: 'Culinary Class Wars PR Agent'
 description: 'AI based Culinary Class Wars Concept PR Agent'
+inputs:
+  gemini_api_key:
+    description: 'Gemini API Key'
+    required: true
 runs:
   using: 'composite'
   steps:
