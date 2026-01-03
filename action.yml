@@ -13,8 +13,10 @@ runs:
   steps:
     - name: Install Reviewer Dependencies
       shell: bash
-      # 중요: --prefix를 사용하여 액션 소스 폴더 안에 설치합니다.
-      run: npm install @actions/github --prefix ${{ github.action_path }}
+      run: |
+        cd ${{ github.action_path }}/scripts
+        npm init -y
+        npm install @actions/github
 
     - name: Run Culinary Review
       shell: bash
