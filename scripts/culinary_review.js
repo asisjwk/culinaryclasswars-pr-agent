@@ -21,9 +21,10 @@ module.exports = async ({ github, context }) => {
     const model = "gemini-2.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-    // JSON 형식을 더 엄격하게 요구
+    // AI에게 '현재 받은 Diff 텍스트에 존재하는 + 기호가 붙은 라인 번호'만 쓰라고 강조
     const formatInstruction = isLineReview
-    ? `\nReturn ONLY a JSON array of objects for the file '${targetFile}'. Format: [{"line": number, "comment": "string"}]`
+    ? `\nCRITICAL: Use ONLY line numbers that appear in the provided Diff content.
+      DO NOT hallucinate line numbers. Output format: [{"line": number, "comment": "string"}]`
     : "";
 
     const response = await fetch(url, {
