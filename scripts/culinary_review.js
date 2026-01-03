@@ -22,7 +22,7 @@ module.exports = async ({ github, context }) => {
   // 3. Gemini API 호출 함수 (변수명 response 통일)
   async function askGemini(prompt, content, description) {
     // fetch 결과를 'response' 변수에 담습니다.
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
