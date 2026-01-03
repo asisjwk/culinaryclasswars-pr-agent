@@ -6,8 +6,9 @@ inputs:
     description: 'Gemini API Key'
     required: true
   github_token:
-    description: 'Gemini API Key'
+    description: 'Github Token'
     required: true
+    default: ${{ github.token }}
 runs:
   using: 'composite'
   steps:
