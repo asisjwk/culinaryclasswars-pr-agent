@@ -5,12 +5,13 @@ module.exports = async ({ github, context }) => {
   const { execSync } = require('child_process');
   const scriptsPath = path.join(process.cwd(), 'scripts');
 
-  const baseRef = context.payload.pull_request.base.ref;
-  const headRef = context.payload.pull_request.head.sha;
+  const pr = context.payload.pull_request;
+  const baseRef = pr.base.ref;
+  const headSha = pr.head.sha;
   const diff = execSync(`git diff origin/${baseRef} HEAD`).toString();
   const changedFiles = execSync(`git diff --name-only origin/${baseRef} HEAD`).toString().trim().split('\n');
   const targetFile = changedFiles[0]; // 테스트를 위해 첫 번째 변경 파일 선택
-  const prBody = context.payload.pull_request.body || "No description provided.";
+  const prBody = pr.body || "No description provided.";
 
   if (!diff) return;
 
@@ -41,11 +42,9 @@ module.exports = async ({ github, context }) => {
     return data.candidates[0].content.parts[0].text;
   }
 
-  // 리뷰 생성 시 에러를 방지하는 헬퍼 함수
   async function createSafeReview(judgeName, rawData, title) {
     try {
       const reviews = JSON.parse(rawData.replace(/```json|```/g, ''));
-      // 유효한 라인 번호만 필터링 (보통 1 이상)
       const validComments = reviews
         .filter(r => r.line && r.line > 0)
         .map(r => ({
@@ -58,7 +57,7 @@ module.exports = async ({ github, context }) => {
         await github.rest.pulls.createReview({
           owner: context.repo.owner,
           repo: context.repo.repo,
-          pull_number: pr.number,
+          pull_number: pr.number, // 정의된 pr 변수 사용
           commit_id: headSha,
           body: title,
           event: 'COMMENT',
