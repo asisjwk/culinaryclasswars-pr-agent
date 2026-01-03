@@ -68,10 +68,9 @@ module.exports = async ({ github, context }) => {
             text: `
               ${prompt}
               [CRITICAL RULE]
-              1. ONLY use line numbers that exist in the provided [Full Code].
-              2. The "line" value must be a strictly positive INTEGER.
-              3. If you cannot find a specific line to comment on, return an empty array: {"reviews": []}.
-              4. DO NOT use null, "N/A", or strings for the line number.
+              1. ONLY comment on the lines that appear in the [Modified Diff] section.
+              2. If the issue is not related to the modified lines, ignore it.
+              3. Your "line" number MUST be the line number from the [Full Source Code].
 
               [전체 소스 코드]:
               ${fullCode}
@@ -115,16 +114,21 @@ module.exports = async ({ github, context }) => {
       }
 
       // 3. 필터링 및 댓글 본문 생성 (undefined 방지)
-        const validComments = reviews
+      const validComments = reviews
         .filter(r => {
-          // 라인 번호가 반드시 '숫자'여야 하며, 0보다 커야 함
           const lineNum = parseInt(r.line);
-          return r && !isNaN(lineNum) && lineNum > 0 && r.comment;
+          // 1. 숫자인지 확인
+          if (isNaN(lineNum) || lineNum <= 0) return false;
+
+          // 2. [추가] 해당 라인이 Diff 내용에 포함되어 있는지 확인 (Halliucination 방지)
+          // Diff 텍스트 안에 "@@ -L,n +lineNum,n @@" 형태가 있는지 확인하거나
+          // 최소한 해당 라인 번호가 코드에 존재하는지 확인합니다.
+          return r.comment && fileContent.split('\n').length >= lineNum;
         })
         .map(r => ({
           path: targetFile,
           line: parseInt(r.line),
-          // r.comment가 없으면 r.message나 객체 전체 문자열이라도 가져옴
+          side: "RIGHT", // [추가] 새롭게 추가된 코드 쪽에 댓글을 단다는 설정
           body: `**${judgeName}**: ${r.comment || r.message || JSON.stringify(r)}`
         }));
 
