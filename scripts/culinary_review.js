@@ -28,6 +28,15 @@ module.exports = async ({ github, context }) => {
     const model = "gemini-2.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
+    const languageInstruction = `
+      [LANGUAGE INSTRUCTION]
+      1. Detect the primary language used in the '[PR Description]' provided below.
+      2. Respond in that SAME language.
+      3. Even when translating, keep the specific persona's tone:
+        - Paik: Friendly, intuitive, using local professional slang.
+        - Ahn: Formal, strict, emphasizing 'intent' and 'perfection'.
+    `;
+
     // AI에게 '현재 받은 Diff 텍스트에 존재하는 + 기호가 붙은 라인 번호'만 쓰라고 강조
     const formatInstruction = `\nCRITICAL: Use ONLY line numbers that appear in the provided Diff content.
                                DO NOT hallucinate line numbers. Output format: [{"line": number, "comment": "string"}]`;
@@ -39,7 +48,9 @@ module.exports = async ({ github, context }) => {
         contents: [{
           parts: [{
             text: `
+              ${languageInstruction}
               ${prompt}
+              ${formatInstruction}
 
               [TASK]
               제공된 '전체 소스 코드'의 라인 번호를 기준으로 리뷰하십시오.
