@@ -3,7 +3,7 @@ const path = require('path');
 
 module.exports = async ({ github, context }) => {
   const { execSync } = require('child_process');
-  const scriptsPath = path.join(process.cwd(), '.github/scripts');
+  const scriptsPath = path.join(process.cwd(), 'scripts');
 
   // 1. 코드 Diff 및 프롬프트 로드
   const baseRef = context.payload.pull_request.base.ref;
