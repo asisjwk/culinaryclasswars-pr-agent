@@ -16,7 +16,7 @@ runs:
       run: |
         cd ${{ github.action_path }}/scripts
         npm init -y
-        npm install @actions/github
+        run: npm install @actions/github --prefix ${{ github.action_path }}/scripts
 
     - name: Run Culinary Review
       shell: bash
