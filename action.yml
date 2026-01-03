@@ -11,6 +11,10 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Install Reviewer Dependencies
+      shell: bash
+      run: npm install @actions/github
+
     - name: Run Culinary Review
       shell: bash
       env:
