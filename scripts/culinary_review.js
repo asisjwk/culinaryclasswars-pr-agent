@@ -142,14 +142,22 @@ module.exports = async ({ github, context }) => {
 
     let finalDebateText = "";
     try {
-      // 1. JSON 태그 제거 및 파싱
-      const cleaned = debateRaw.replace(/```json|```/g, '').trim();
-      const parsed = JSON.parse(cleaned);
+      // 1. JSON 문자열만 정교하게 추출 (앞뒤 쓰레기 텍스트 제거)
+      const jsonStart = debateRaw.indexOf('{');
+      const jsonEnd = debateRaw.lastIndexOf('}') + 1;
+      const jsonString = debateRaw.substring(jsonStart, jsonEnd);
 
-      // 2. 'debate' 필드가 있으면 가져오고, 아니면 객체 전체를 예쁘게 문자열로 변환
-      finalDebateText = parsed.debate || parsed.comment || JSON.stringify(parsed, null, 2);
+      const parsed = JSON.parse(jsonString);
+
+      // 2. 여러가지 필드명 대응 (debate, comment, result 등)
+      finalDebateText = parsed.debate || parsed.comment || parsed.result || (typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2));
+
+      // 만약 여전히 객체라면 문자열화
+      if (typeof finalDebateText === 'object') {
+        finalDebateText = JSON.stringify(finalDebateText, null, 2);
+      }
     } catch (e) {
-      // 3. JSON 파싱 실패 시 원문에서 마크다운 태그만 정리해서 사용
+      // JSON 파싱 실패 시 마크다운 코드 블록만 제거하고 원문 사용
       finalDebateText = debateRaw.replace(/```json|```/g, '').trim();
     }
 
