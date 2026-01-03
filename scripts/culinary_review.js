@@ -1,67 +1,49 @@
 const fs = require('fs');
 const path = require('path');
 
-// --- [Part 1] Runner: node 명령으로 직접 실행될 때 ---
-if (require.main === module) {
-  try {
-    const github = require('@actions/github');
-    const token = process.env.GITHUB_TOKEN;
-    const octokit = github.getOctokit(token);
-
-    const context = {
-      payload: {
-        pull_request: {
-          number: parseInt(process.env.PR_NUMBER),
-          base: { ref: process.env.BASE_REF },
-          head: { sha: process.env.HEAD_SHA },
-          body: process.env.PR_BODY || ""
-        }
-      },
-      repo: {
-        owner: process.env.REPO_OWNER,
-        repo: process.env.REPO_NAME
-      },
-      issue: {
-        number: parseInt(process.env.PR_NUMBER)
-      }
-    };
-
-    module.exports({ github: octokit, context }).catch(err => {
-      console.error(err);
-      process.exit(1);
-    });
-  } catch (e) {
-    console.error("Missing @actions/github module. Please ensure it is installed.");
-    process.exit(1);
-  }
-}
-
-// --- [Part 2] Engine: 실제 리뷰 로직 ---
+/**
+ * Culinary Class Wars PR Review Engine
+ * github-script 환경에서 호출됨
+ */
 module.exports = async ({ github, context }) => {
   const { execSync } = require('child_process');
 
+  // [1] 데이터 추출
   const pr = context.payload.pull_request;
+  if (!pr) {
+    console.log("[System] Not a Pull Request event. Skipping.");
+    return;
+  }
+
+  const repoOwner = context.repo.owner;
+  const repoName = context.repo.repo;
   const prNumber = pr.number;
   const headSha = pr.head.sha;
   const baseRef = pr.base.ref;
   const prBody = pr.body || "No description provided.";
 
-  const repoOwner = context.repo.owner; // 추가
-  const repoName = context.repo.repo;   // 추가
-
-  const actionRoot = process.env.ACTION_PATH || process.cwd();
+  // ACTION_PATH는 action.yml의 env에서 주입됩니다.
+  const actionRoot = process.env.ACTION_PATH;
   const scriptsPath = path.join(actionRoot, 'scripts');
 
   console.log(`[System] Starting review for PR #${prNumber} in ${repoOwner}/${repoName}`);
 
-  const changedFiles = execSync(`git diff --name-only origin/${baseRef} HEAD`).toString().trim().split('\n');
-  const targetFile = changedFiles[0];
+  // [2] 변경 사항 파악
+  let changedFiles;
+  try {
+    changedFiles = execSync(`git diff --name-only origin/${baseRef} HEAD`).toString().trim().split('\n');
+  } catch (e) {
+    console.error("[Error] Failed to get git diff. Ensure fetch-depth is 0 in checkout step.");
+    return;
+  }
 
+  const targetFile = changedFiles[0];
   if (!targetFile) {
     console.log("No changed files to review.");
     return;
   }
 
+  // 파일의 전체 내용 및 라인 번호 포함 텍스트 생성
   const fileContent = fs.readFileSync(path.join(process.cwd(), targetFile), 'utf8');
   const fileContentWithLineNumbers = fileContent.split('\n')
     .map((line, index) => `${index + 1}: ${line}`)
@@ -72,8 +54,9 @@ module.exports = async ({ github, context }) => {
 
   const loadPrompt = (file) => fs.readFileSync(path.join(scriptsPath, file), 'utf8');
 
+  // [3] Gemini API 호출 함수
   async function askGemini(prompt, diffContent, fullCode, description) {
-    const model = "gemini-1.5-flash"; // 2.5는 아직 존재하지 않으므로 1.5-flash 권장
+    const model = "gemini-1.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     const response = await fetch(url, {
@@ -86,9 +69,14 @@ module.exports = async ({ github, context }) => {
               ${prompt}
               [TASK] 전체 소스 코드의 라인 번호를 기준으로 리뷰하십시오.
 
-              [전체 소스 코드]: ${fullCode}
-              [수정된 Diff]: ${diffContent}
-              [PR 설명]: ${description}
+              [전체 소스 코드]:
+              ${fullCode}
+
+              [수정된 Diff]:
+              ${diffContent}
+
+              [PR 설명]:
+              ${description}
             `
           }]
         }],
@@ -101,6 +89,7 @@ module.exports = async ({ github, context }) => {
     return data.candidates[0].content.parts[0].text;
   }
 
+  // [4] GitHub 리뷰 생성 함수
   async function createSafeReview(judgeName, rawData, title) {
     try {
       const cleanedData = rawData.replace(/```json|```/g, '').trim();
@@ -131,18 +120,24 @@ module.exports = async ({ github, context }) => {
     }
   }
 
+  // [5] 메인 심사 프로세스 실행
   try {
+    // 백종원 심사
+    console.log("Step 1: Paik's Intuition...");
     const paikRaw = await askGemini(loadPrompt('prompt_paik.md'), diff, fileContentWithLineNumbers, prBody);
     await createSafeReview("백종원", paikRaw, "### 👨‍🍳 백종원의 실시간 코드 미감 체크");
 
+    // 안성재 심사
+    console.log("Step 2: Ahn's Perfection...");
     const ahnRaw = await askGemini(loadPrompt('prompt_ahn.md'), diff, fileContentWithLineNumbers, prBody);
     await createSafeReview("안성재", ahnRaw, "### 👓 안성재의 로직 익힘 심사");
 
-    // debateResult 인자 수정 (description 자리에 prBody 전달)
+    // 끝장 토론 (PR 본문에 댓글 작성)
+    console.log("Step 3: Final Debate...");
     const debateResult = await askGemini(
       loadPrompt('prompt_debate.md'),
       "",
-      `[Paik]: ${paikRaw}\n[Ahn]: ${ahnRaw}`,
+      `[Paik's Review]: ${paikRaw}\n\n[Ahn's Review]: ${ahnRaw}`,
       prBody
     );
 
@@ -154,6 +149,6 @@ module.exports = async ({ github, context }) => {
     });
 
   } catch (error) {
-    console.error("Evaluation Error:", error);
+    console.error("Evaluation Process Error:", error);
   }
 };
