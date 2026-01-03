@@ -4,6 +4,7 @@ const path = require('path');
 module.exports = async ({ github, context }) => {
   const { execSync } = require('child_process');
   const scriptsPath = path.join(process.cwd(), 'scripts');
+  const prDescription = context.payload.pull_request.body || "설명이 작성되지 않았습니다.";
 
   // 1. 코드 Diff 및 프롬프트 로드
   const baseRef = context.payload.pull_request.base.ref;
@@ -12,11 +13,29 @@ module.exports = async ({ github, context }) => {
 
   const loadPrompt = (file) => fs.readFileSync(path.join(scriptsPath, file), 'utf8');
 
-  async function askGemini(prompt, content) {
+  async function askGemini(prompt, content, description) {
     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: `${prompt}\n\n[도전자의 코드 설명서(PR 본문)]:\n${description}\n\n[심사 대상 코드(Diff)]:\n${content}` }] }] })
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: `
+              ${prompt}
+
+              심사 지침:
+              아래 제공된 '도전자의 요리 설명서(PR 본문)'를 먼저 분석한 뒤,
+              그 내용이 '심사 대상 코드(Diff)'에 어떻게 반영되었는지 대조하여 심사평을 남기십시오.
+
+              [도전자의 요리 설명서(PR 본문)]:
+              ${description}
+
+              [심사 대상 코드(Diff)]:
+              ${content}
+            `
+          }]
+        }]
+      })
     });
     const data = await res.json();
     return data.candidates[0].content.parts[0].text;
@@ -24,10 +43,10 @@ module.exports = async ({ github, context }) => {
 
   // 2. 심사 진행
   console.log("백종원 심사위원 심사 중...");
-  const paikReview = await askGemini(loadPrompt('prompt_paik.md'), diff);
+  const paikReview = await askGemini(loadPrompt('prompt_paik.md'), diff, prDescription);
 
   console.log("안성재 심사위원 심사 중...");
-  const ahnReview = await askGemini(loadPrompt('prompt_ahn.md'), diff);
+  const ahnReview = await askGemini(loadPrompt('prompt_ahn.md'), diff, prDescription);
 
   // 3. 토론 진행
   console.log("심사위원 토론 중...");
