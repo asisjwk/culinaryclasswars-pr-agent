@@ -37,7 +37,21 @@ module.exports = async ({ github, context }) => {
         }]
       })
     });
-    const data = await res.json();
+    const data = await response.json();
+
+    if (data.error) {
+      console.error("Gemini API Error Detail:", JSON.stringify(data.error, null, 2));
+      throw new Error(`Gemini API Error: ${data.error.message}`);
+    }
+
+    if (!data.candidates || data.candidates.length === 0) {
+      if (data.promptFeedback) {
+        console.error("Prompt was blocked by safety settings:", JSON.stringify(data.promptFeedback, null, 2));
+      }
+      console.error("Full API Response:", JSON.stringify(data, null, 2));
+      throw new Error("No candidates returned from Gemini. Check safety settings or API quota.");
+    }
+
     return data.candidates[0].content.parts[0].text;
   }
 
