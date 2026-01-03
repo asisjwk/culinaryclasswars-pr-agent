@@ -6,8 +6,7 @@ Black & White Reviewer is an AI-powered code review automation system that trans
 
 ## Screenshots
 
-<img width="1626" height="1079" alt="CleanShot 2026-01-04 at 04 46 54" src="https://github.com/user-attachments/assets/9440491d-e3f4-43a1-a26f-8c8a8eb441d1" />
-<img width="854" height="554" alt="CleanShot 2026-01-04 at 04 17 21" src="https://github.com/user-attachments/assets/58fbe67c-158e-426a-b0cb-6739b6e734c2" />
+<img width="1617" height="749" alt="CleanShot 2026-01-04 at 08 31 54" src="https://github.com/user-attachments/assets/1a3e4976-f385-44c3-8f14-9ff9b194049e" />
 
 ## 🚀 Quick Start
 ### 1. Use GitHub Actions
