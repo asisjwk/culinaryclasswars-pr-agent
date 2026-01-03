@@ -6,9 +6,13 @@ module.exports = async ({ github, context }) => {
   const actionRoot = process.env.ACTION_PATH || process.cwd();
   const scriptsPath = path.join(actionRoot, 'scripts');
 
-  const pr = context.payload.pull_request;
-  const baseRef = pr.base.ref;
-  const headSha = pr.head.sha;
+  const prNumber = process.env.PR_NUMBER;
+  const repoOwner = process.env.REPO_OWNER;
+  const repoName = process.env.REPO_NAME;
+  const headSha = process.env.HEAD_SHA;
+  const baseRef = process.env.BASE_REF;
+
+  console.log(`[System] Starting review for PR #${prNumber} in ${repoOwner}/${repoName}`);
 
   const changedFiles = execSync(`git diff --name-only origin/${baseRef} HEAD`).toString().trim().split('\n');
   const targetFile = changedFiles[0]; // 테스트를 위해 첫 번째 변경 파일 선택

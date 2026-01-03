@@ -13,13 +13,10 @@ runs:
       env:
         GEMINI_API_KEY: ${{ inputs.gemini_api_key }}
         ACTION_PATH: ${{ github.action_path }}
-      with:
-        script: |
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO_OWNER: ${{ github.repository_owner }}
+        REPO_NAME: ${{ github.event.repository.name }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+      run: |
           node ${{ github.action_path }}/scripts/culinary_review.js
-          const path = require('path');
-          const scriptPath = path.join(process.env.ACTION_PATH, 'scripts/culinary_review.js');
-
-          console.log(`[System] Executing script: ${scriptPath}`);
-
-          const culinaryReview = require(scriptPath);
-          await culinaryReview({ github, context });
