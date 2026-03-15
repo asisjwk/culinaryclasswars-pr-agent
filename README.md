@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: culinaryclasswars-pr-agent Step
-        uses: asisjinwookim/culinaryclasswars-pr-agent@main
+        uses: asisjwk/culinaryclasswars-pr-agent@main
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
 ```
@@ -36,7 +36,7 @@ jobs:
 2. Register it as a secret in your repository: Settings > Secrets and variables > Actions under the name GEMINI_API_KEY.
 
 ## Examples
-[PR review: Transaction Orchestrator](https://github.com/asisjinwookim/culinaryclasswars-pr-tester/pull/8)
+[PR review: Transaction Orchestrator](https://github.com/asisjwk/culinaryclasswars-pr-tester/pull/8)
 <img width="1617" height="749" alt="CleanShot 2026-01-04 at 08 31 54" src="https://github.com/user-attachments/assets/1a3e4976-f385-44c3-8f14-9ff9b194049e" />
 
 ## ⚖️ Legal Notice
